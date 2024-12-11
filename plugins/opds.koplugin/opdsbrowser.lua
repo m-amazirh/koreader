@@ -345,6 +345,33 @@ function OPDSBrowser:genItemTableFromCatalog(catalog, item_url)
         return url.absolute(item_url, href)
     end
 
+    local function get_read_progress(link)
+        local page_count = nil
+        local last_page_read = nil
+
+        -- https://vaemendis.net/opds-pse/
+        -- «count» MUST provide the number of pages of the document
+        -- namespace may be not "pse"
+        -- The lastRead attribute is optional 'The Link MAY contain the following attributes'
+        -- lastRead MUST provide the last page read for this document. The numbering starts at 1.
+        for key, value in pairs(link) do
+            logger.warn("!!!!  -> key : " .. key .. ", value : " .. value)
+            if key:sub(-6) == ":count" then
+                page_count = tonumber(value)
+            elseif key:sub(-9) == ":lastRead" then
+                last_page_read = tonumber(value)
+            end
+
+            if page_count ~= nil and last_page_read ~= nil then
+                break
+            end
+        end
+
+        logger.warn("!!!!  -> Page count : " .. page_count .. ", Last Page : " .. (last_page_read and last_page_read or "missing"))
+
+        return page_count, last_page_read
+    end
+
     local has_opensearch = false
     local hrefs = {}
     if feed.link then
@@ -410,22 +437,14 @@ function OPDSBrowser:genItemTableFromCatalog(catalog, item_url)
                             title = link.title,
                         })
                     elseif link.rel == self.stream_rel then
-                        -- https://vaemendis.net/opds-pse/
-                        -- «count» MUST provide the number of pages of the document
-                        -- namespace may be not "pse"
-                        local count
-                        for k, v in pairs(link) do
-                            if k:sub(-6) == ":count" then
-                                count = tonumber(v)
-                                break
-                            end
-                        end
-                        if count then
+                        local page_count, last_page_read = get_read_progress(link)
+                        if page_count then
                             table.insert(item.acquisitions, {
                                 type  = link.type,
                                 href  = link_href,
                                 title = link.title,
-                                count = count,
+                                count = page_count,
+                                last_read = last_page_read
                             })
                         end
                     elseif link.rel == self.thumbnail_rel or link.rel == self.thumbnail_rel_alt then
@@ -579,7 +598,7 @@ function OPDSBrowser:showDownloads(item)
                     -- @translators "Stream" here refers to being able to read documents from an OPDS server without downloading them completely, on a page by page basis.
                     text = _("Page stream") .. "\u{2B0C}", -- append LEFT RIGHT BLACK ARROW
                     callback = function()
-                        OPDSPSE:streamPages(acquisition.href, acquisition.count, false, self.root_catalog_username, self.root_catalog_password)
+                        OPDSPSE:streamPages(acquisition.href, acquisition.count, acquisition.last_read, false, self.root_catalog_username, self.root_catalog_password)
                         UIManager:close(self.download_dialog)
                     end,
                 },
@@ -587,7 +606,7 @@ function OPDSBrowser:showDownloads(item)
                     -- @translators "Stream" here refers to being able to read documents from an OPDS server without downloading them completely, on a page by page basis.
                     text = _("Stream from page") .. "\u{2B0C}", -- append LEFT RIGHT BLACK ARROW
                     callback = function()
-                        OPDSPSE:streamPages(acquisition.href, acquisition.count, true, self.root_catalog_username, self.root_catalog_password)
+                        OPDSPSE:streamPages(acquisition.href, acquisition.count, acquisition.last_read, true, self.root_catalog_username, self.root_catalog_password)
                         UIManager:close(self.download_dialog)
                     end,
                 },
@@ -693,7 +712,7 @@ function OPDSBrowser:showDownloads(item)
             text = _("Book cover"),
             enabled = cover_link and true or false,
             callback = function()
-                OPDSPSE:streamPages(cover_link, 1, false, self.root_catalog_username, self.root_catalog_password)
+                OPDSPSE:streamPages(cover_link, 1,1, false, self.root_catalog_username, self.root_catalog_password)
             end,
         },
         {

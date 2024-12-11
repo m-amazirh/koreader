@@ -15,7 +15,7 @@ local T = require("ffi/util").template
 local OPDSPSE = {}
 
 -- This function attempts to pull chapter progress from Kavita.
-function OPDSPSE:getLastPage(remote_url, username, password)
+function OPDSPSE:getLastPageUsingKavitaApi(remote_url, username, password)
     local last_page = 0
 
     -- create URL's and reference vars
@@ -92,16 +92,21 @@ function OPDSPSE:getLastPage(remote_url, username, password)
     return last_page;
 end
 
-function OPDSPSE:streamPages(remote_url, count, continue, username, password)
-    -- attempt to pull chapter progress from Kavita if user pressed
-    -- "Page Stream" button.
-    -- We have to pull the progress here, otherwise the creation of the page_table
-    -- will overwrite the book progress before we pull it, making it always 0.
-    local ok, last_page = pcall(function() return self:getLastPage(remote_url, username, password) end)
-    if not ok then
-        logger.warn("Couldn't pull progress, defaulting to Page 0.")
-        last_page = 0
+function OPDSPSE:streamPages(remote_url, count, last_page_read, continue, username, password)
+    if last_page_read == nil then
+        -- attempt to pull chapter progress from Kavita if user pressed
+        -- "Page Stream" button.
+        -- We have to pull the progress here, otherwise the creation of the page_table
+        -- will overwrite the book progress before we pull it, making it always 0.
+        local ok, result = pcall(function() return self:getLastPageUsingKavitaApi(remote_url, username, password) end)
+        if not ok then
+            logger.warn("Couldn't pull progress, defaulting to Page 0.")
+            last_page_read = 1
+        else
+            last_page_read = result
+        end
     end
+
     local page_table = {image_disposable = true}
     setmetatable(page_table, {__index = function (_, key)
         if type(key) ~= "number" then
@@ -162,7 +167,7 @@ function OPDSPSE:streamPages(remote_url, count, continue, username, password)
     else
         -- add 1 since Kavita's Page count is zero based
         -- and ImageViewer is not.
-        viewer:switchToImageNum(last_page+1)
+        viewer:switchToImageNum(last_page_read + 1)
     end
 end
 
